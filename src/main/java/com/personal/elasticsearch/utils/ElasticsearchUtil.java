@@ -1,6 +1,7 @@
 package com.personal.elasticsearch.utils;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.personal.elasticsearch.bean.EsPage;
 import org.apache.commons.lang3.StringUtils;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
@@ -26,7 +27,10 @@ import org.elasticsearch.common.text.Text;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.index.reindex.BulkByScrollResponse;
 import org.elasticsearch.index.reindex.DeleteByQueryRequest;
 import org.elasticsearch.search.SearchHit;
@@ -43,9 +47,8 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -79,7 +82,7 @@ public class ElasticsearchUtil {
      *
      * @param index 索引，类似数据库
      * @return boolean
-     * @auther: LHL
+     * @auther:
      */
     public static boolean isIndexExist(String index) {
         boolean exists = false;
@@ -98,13 +101,19 @@ public class ElasticsearchUtil {
         }
         return exists;
     }
+    public static boolean exists(String index, String id) throws IOException {
+        GetRequest getRequest = new GetRequest(index, id);
+        boolean exists = client.exists(getRequest, RequestOptions.DEFAULT);
+        LOGGER.info("exists: {}", exists);
+        return exists;
+    }
 
     /**
      * 创建索引以及映射mapping，并给索引某些字段指定iK分词，以后向该索引中查询时，就会用ik分词。
      *
      * @param: indexName  索引，类似数据库
      * @return: boolean
-     * @auther: LHL
+     * @auther:
      */
     public static boolean createIndex(String indexName) {
         if (!isIndexExist(indexName)) {
@@ -164,12 +173,6 @@ public class ElasticsearchUtil {
         return createIndexResponse.isAcknowledged();
     }
 
-    public static boolean exists(String index, String id) throws IOException {
-        GetRequest getRequest = new GetRequest(index, id);
-        boolean exists = client.exists(getRequest, RequestOptions.DEFAULT);
-        LOGGER.info("exists: {}", exists);
-        return exists;
-    }
 
     /**
      * 数据添加
@@ -178,7 +181,7 @@ public class ElasticsearchUtil {
      * @param indexName 索引，类似数据库
      * @param id        id
      * @return String
-     * @auther: LHL
+     * @auther:
      */
     public static String addData(XContentBuilder content, String indexName, String id) throws IOException {
         IndexResponse response = null;
@@ -187,7 +190,61 @@ public class ElasticsearchUtil {
         LOGGER.info("addData response status:{},id:{}", response.status().getStatus(), response.getId());
         return response.getId();
     }
+    /**
+     * 查询数据
+     *
+     * @param indexName 索引
+     * @param id        id
+     * @return String
+     * @auther:
+     */
+    public static Map<String,Object> getDataByParam(String indexName, String id,String depotType,Date updateTime){
+        Map<String, Object> map = new HashMap<String, Object>(16);
+        SearchRequest searchRequest = new SearchRequest(indexName);
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("UPDATE_TIME");
+        rangeQueryBuilder.gte(updateTime);
+        boolQueryBuilder.must(rangeQueryBuilder);
+        boolQueryBuilder.must(QueryBuilders.termQuery("DEPOT_ID",id));
+        boolQueryBuilder.must(QueryBuilders.termQuery("DEPOT_TYPE",depotType));
+        //时区问题:查询是正常的,会按照入参的时间正确匹配,但是展示的结果就会有时区问题,显示的结果晚8小时
+      //  boolQueryBuilder.must(QueryBuilders.termQuery("UPDATE_TIME",updateTime));
+        // 打印查询语句，生成DSL查询语句
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(boolQueryBuilder);
+        LOGGER.info("DSL查询语句为：" + sourceBuilder.toString());
 
+        searchSourceBuilder.query(boolQueryBuilder);
+        searchRequest.source(searchSourceBuilder);
+        try {
+            SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+            LOGGER.info(searchResponse.toString());
+            SearchHits hits = searchResponse.getHits();
+            long total = hits.getTotalHits().value;
+            LOGGER.info("总数:"+total);
+            for (SearchHit sh :hits) {
+                map = sh.getSourceAsMap();
+                LOGGER.info("map:{}",JSONObject.toJSONString(map));
+                Set<String> strings = map.keySet();
+                for (String str: strings) {
+                    if("UPDATE_TIME".equals(str)){
+                        LOGGER.info("===时间转换===");
+                        String updateTime1 = (String)map.get("UPDATE_TIME");
+                        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX");
+                        SimpleDateFormat format1 = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+                        map.put("UPDATE_TIME",format1.format(format.parse(updateTime1)));
+                    }
+                }
+                String sourceAsString = sh.getSourceAsString();
+                LOGGER.info("sourceAsString:{}",sourceAsString);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return map;
+    }
 
     /**
      * 数据修改
@@ -196,7 +253,7 @@ public class ElasticsearchUtil {
      * @param indexName 索引，类似数据库
      * @param id        id
      * @return String
-     * @auther: LHL
+     * @auther:
      */
     public static String updateData(XContentBuilder content, String indexName, String id) throws IOException {
         UpdateResponse response = null;
@@ -227,7 +284,7 @@ public class ElasticsearchUtil {
      * @param builder   要删除的数据  new TermQueryBuilder("userId", userId)
      * @param indexName 索引，类似数据库
      * @return
-     * @auther: LHL
+     * @auther:
      */
     public static void deleteByQuery(String indexName, QueryBuilder builder) {
         DeleteByQueryRequest request = new DeleteByQueryRequest(indexName);
@@ -247,7 +304,7 @@ public class ElasticsearchUtil {
      *
      * @param indexName
      * @param id
-     * @auther LHL
+     * @auther
      */
     public static void deleteData(String indexName, String id) throws IOException {
         DeleteRequest deleteRequest = new DeleteRequest(indexName, id);
@@ -259,7 +316,7 @@ public class ElasticsearchUtil {
      * 清空记录
      *
      * @param indexName
-     * @auther: LHL
+     * @auther:
      */
     public static void clear(String indexName) {
         DeleteRequest deleteRequest = new DeleteRequest(indexName);
@@ -400,7 +457,7 @@ public class ElasticsearchUtil {
      *
      * @param: [hit, highlightField]
      * @return: java.util.Map<java.lang.String, java.lang.Object>
-     * @auther: LHL
+     * @auther:
      */
     private static Map<String, Object> getResultMap(SearchHit hit, String highlightField) {
         hit.getSourceAsMap().put("id", hit.getId());
@@ -453,7 +510,7 @@ public class ElasticsearchUtil {
      *
      * @param: [response, highlightField]
      * @return: java.util.List<java.util.Map < java.lang.String, java.lang.Object>>
-     * @auther: LHL
+     * @auther:
      */
     private static List<Map<String, Object>> disposeScrollResult(SearchResponse response, String highlightField) {
         List<Map<String, Object>> sourceList = new ArrayList<>();
