@@ -18,8 +18,9 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.core.CountRequest;
+import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.client.indices.CreateIndexRequest;
 import org.elasticsearch.client.indices.CreateIndexResponse;
 import org.elasticsearch.client.indices.GetIndexRequest;
@@ -27,14 +28,14 @@ import org.elasticsearch.common.text.Text;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.RangeQueryBuilder;
-import org.elasticsearch.index.reindex.BulkByScrollResponse;
+import org.elasticsearch.index.query.*;
 import org.elasticsearch.index.reindex.DeleteByQueryRequest;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.aggregations.AggregationBuilder;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
+import org.elasticsearch.search.aggregations.metrics.Max;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
@@ -246,6 +247,19 @@ public class ElasticsearchUtil {
         return map;
     }
 
+    public static long getCountByParam(String index ,String depotType){
+        CountRequest countRequest = new CountRequest(index);
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("DEPOT_TYPE", depotType);
+        countRequest.query(termQueryBuilder);
+        try {
+            CountResponse count = client.count(countRequest, RequestOptions.DEFAULT);
+            long countCount = count.getCount();
+            return countCount;
+        } catch (IOException e) {
+            LOGGER.error("查询异常:",e);
+            return 0;
+        }
+    }
     /**
      * 数据修改
      *
@@ -536,6 +550,60 @@ public class ElasticsearchUtil {
             e.printStackTrace();
         }
         return sourceList;
+    }
+    /**
+     * select DEPOT_TYPE,COUNT(*) depot_count from rc_depot group by DEPOT_TYPE having depot_count > 2
+     * @param index
+     * @param
+     */
+    public static void getTermAggreation(String index,String field) {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        /*searchSourceBuilder.query(queryBuilder);*/
+        searchSourceBuilder.size(0);
+        AggregationBuilder agg1 = AggregationBuilders.terms("depot_count").field(field);
+        //AggregationBuilder agg2 = AggregationBuilders.terms("agg2").field(field2);
+       // agg1.subAggregation(agg2);  多字段聚合
+        searchSourceBuilder.aggregation(agg1);
+        SearchRequest searchRequest = new SearchRequest(index);
+        searchRequest.source(searchSourceBuilder);
+        SearchResponse searchResponse = null;
+        try {
+            searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        LOGGER.info("结果:{}",JSONObject.toJSONString(searchResponse));
+        Terms terms = searchResponse.getAggregations().get("depot_count");
+        for (Terms.Bucket entry : terms.getBuckets()) {
+            //groupMap.put(entry.getKey().toString(), entry.getDocCount());
+            System.out.println(entry.getKey().toString() +"--->"+ entry.getDocCount());
+        }
+    }
+    /**
+     * select max(DEPOT_ID) depot_count from rc_depot where DEPOT_TYPE = '1'
+     * @param index
+     * @param
+     */
+    public static double getMaxAggreation(String index,String param,String field) {
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        TermQueryBuilder termQuery = QueryBuilders.termQuery("DEPOT_TYPE", param);
+        searchSourceBuilder.query(termQuery);
+        searchSourceBuilder.size(0);
+        AggregationBuilder agg = AggregationBuilders.max("MAX").field(field);
+        searchSourceBuilder.aggregation(agg);
+        SearchRequest searchRequest = new SearchRequest(index);
+        searchRequest.source(searchSourceBuilder);
+        SearchResponse searchResponse = null;
+        try {
+            searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        LOGGER.info("结果:{}",JSONObject.toJSONString(searchResponse));
+        Max max = searchResponse.getAggregations().get("MAX");
+        LOGGER.info("查询结果:{}",JSONObject.toJSONString(max));
+        double maxValue = max.getValue();
+        return  maxValue;
     }
 }
 

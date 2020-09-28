@@ -1,21 +1,14 @@
 package com.personal.elasticsearch;
 
 import com.personal.elasticsearch.utils.ElasticsearchUtil;
-import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringRunner;
-
-import javax.annotation.PostConstruct;
-import javax.sound.midi.Soundbank;
 import java.io.IOException;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.Map;
 
@@ -36,17 +29,17 @@ public class ElasticsearchApplicationTests {
 	@Test   //新增数据
     public void addData(){
 
-       /* XContentBuilder mapping = null;
+        /*XContentBuilder mapping = null;
         try {
             mapping = XContentFactory.jsonBuilder()
                     .startObject()
-                    .field("id","0")
-                    .field("DEPOT_ID","0")
+                    .field("id","100")
+                    .field("DEPOT_ID","100")
                     .field("DEPOT_NAME","顶级仓库")
                     .field("DEPOT_TYPE",1)
                     .field("UPDATE_TIME",new Date())
                     .endObject();
-            String depotId = ElasticsearchUtil.addData(mapping, "rc_depot", "0");
+            String depotId = ElasticsearchUtil.addData(mapping, "rc_depot", "100");
             System.out.println(depotId);
         } catch (IOException e) {
             e.printStackTrace();
@@ -116,6 +109,22 @@ public class ElasticsearchApplicationTests {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+    @Test //求和
+    public void getCountByParam(){
+        long count = ElasticsearchUtil.getCountByParam("rc_depot", "2");
+        System.out.println(count);
+    }
+    @Test
+    public void getTermAggreation(){
+        ElasticsearchUtil.getTermAggreation("rc_depot","DEPOT_TYPE");
+    }
+
+    @Test
+    public void getMax(){
+        //失误,求最大最小聚合的字段不能是text类型的
+        double maxAggreation = ElasticsearchUtil.getMaxAggreation("rc_depot", "2", "UPDATE_TIME");
+        System.out.println(maxAggreation);
     }
 
 }
